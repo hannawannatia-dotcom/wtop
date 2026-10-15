@@ -6,7 +6,6 @@ use std::path::Path;
 use std::fs;
 
 fn main() {
-    let mut refesh_time = 0;
     let mut sys = System::new_all();
     let mut components = Components::new_with_refreshed_list();
     let mut disk: Disks = Disks::new_with_refreshed_list();
@@ -80,15 +79,9 @@ fn main() {
         } else {
             (0.0, 0.0, 0.0)
         };
-
-        if refesh_time == 20{
-            print!("\x1B[2J\x1B[H\x1B[?25l");
-            refesh_time = 0;
-        }
         
-
         print!(
-            "\x1B[H\
+            "\x1B[2J\x1B[3J\x1B[H\
             OS: {} \nHost: {}\n\
             \n\
             Power: {}\n\
@@ -116,7 +109,6 @@ fn main() {
         io::stdout().flush().unwrap();
 
         thread::sleep(Duration::from_millis(500));
-        refesh_time += 1;
     }
 
     fn make_bar(percent: f32, width: usize) -> String {
@@ -126,53 +118,53 @@ fn main() {
     }
 
     fn get_system_power() -> String {
-    if let Ok(entries) = fs::read_dir("/sys/class/power_supply") {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let name = path.file_name().unwrap_or_default().to_string_lossy();
-            if name.starts_with("BAT") {
-                if let Ok(p) = fs::read_to_string(path.join("power_now")) {
-                    if let Ok(uw) = p.trim().parse::<f64>() {
-                        if uw > 100_000.0 {
-                            return format!("{:.2} W", uw / 1_000_000.0);
+        if let Ok(entries) = fs::read_dir("/sys/class/power_supply") {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let name = path.file_name().unwrap_or_default().to_string_lossy();
+                if name.starts_with("BAT") {
+                    if let Ok(p) = fs::read_to_string(path.join("power_now")) {
+                        if let Ok(uw) = p.trim().parse::<f64>() {
+                            if uw > 100_000.0 {
+                                return format!("{:.2} W", uw / 1_000_000.0);
+                            }
                         }
                     }
-                }
-                if let (Ok(v), Ok(c)) = (
-                    fs::read_to_string(path.join("voltage_now")),
-                    fs::read_to_string(path.join("current_now")),
-                ) {
-                    if let (Ok(v_num), Ok(c_num)) = (v.trim().parse::<f64>(), c.trim().parse::<f64>()) {
-                        let watts = (v_num * c_num) / 1_000_000_000_000.0;
-                        if watts > 0.1 {
-                            return format!("{:.2} W", watts);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    let mut total_hw_microwatts = 0.0;
-    let mut found_sensor = false;
-    if let Ok(entries) = fs::read_dir("/sys/class/hwmon") {
-        for entry in entries.flatten() {
-            let p = entry.path();
-            for file in &["power1_input", "power1_average"] {
-                if let Ok(content) = fs::read_to_string(p.join(file)) {
-                    if let Ok(val) = content.trim().parse::<f64>() {
-                        if val > 0.0 {
-                            total_hw_microwatts += val;
-                            found_sensor = true;
-                            break;
+                    if let (Ok(v), Ok(c)) = (
+                        fs::read_to_string(path.join("voltage_now")),
+                        fs::read_to_string(path.join("current_now")),
+                    ) {
+                        if let (Ok(v_num), Ok(c_num)) = (v.trim().parse::<f64>(), c.trim().parse::<f64>()) {
+                            let watts = (v_num * c_num) / 1_000_000_000_000.0;
+                            if watts > 0.1 {
+                                return format!("{:.2} W", watts);
+                            }
                         }
                     }
                 }
             }
         }
+        let mut total_hw_microwatts = 0.0;
+        let mut found_sensor = false;
+        if let Ok(entries) = fs::read_dir("/sys/class/hwmon") {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                for file in &["power1_input", "power1_average"] {
+                    if let Ok(content) = fs::read_to_string(p.join(file)) {
+                        if let Ok(val) = content.trim().parse::<f64>() {
+                            if val > 0.0 {
+                                total_hw_microwatts += val;
+                                found_sensor = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if found_sensor {
+            return format!("{:.2} W (HW)", total_hw_microwatts / 1_000_000.0);
+        }
+        "N/A".to_string()
     }
-    if found_sensor {
-        return format!("{:.2} W (HW)", total_hw_microwatts / 1_000_000.0);
-    }
-    "N/A".to_string()
-}
 }
